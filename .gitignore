@@ -1,0 +1,110 @@
+# --- Secrets & Environment Variables ---
+# Absolute priority. Never commit these.
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.pem
+*.key
+certs/
+secrets.json
+
+# --- Python Backend / Agents / Evals ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+pythonenv*/
+
+# Testing & QA
+.target/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+nosetests.xml
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Frontend (Next.js / Node) ---
+# Dependencies
+node_modules/
+/jspm_packages
+
+# Next.js build output
+.next/
+out/
+
+# TypeScript / Build caches
+.tsbuildinfo
+.eslintcache
+.npm
+.yarn-cache
+.pnpm-debug.log*
+
+# --- Containerization & Local DBs ---
+# Local database storage volumes (prevents committing your local Postgres data)
+pgdata/
+redisdata/
+*.db
+*.sqlite3
+
+# Docker local overrides
+docker-compose.override.yml
+
+# --- IDEs & System Garbage ---
+# Editors
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS operating system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
