@@ -1,0 +1,10 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langgraph>=0.0.30
+supabase>=2.4.0
+redis>=5.0.0
+python-multipart>=0.0.9
+langchain-text-splitters>=0.0.1
