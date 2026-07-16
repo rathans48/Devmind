@@ -1,0 +1,35 @@
+{
+  "name": "devmind-inline-studio",
+  "displayName": "DevMind Inline Studio",
+  "description": "Custom inline AI agent execution streaming gateway for DevMind workspace",
+  "version": "1.0.0",
+  "publisher": "devmind-team",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onCommand:devmind.inlineReview"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "devmind.inlineReview",
+        "title": "DevMind: Review Highlighted Code"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "devmind.inlineReview",
+          "group": "navigation",
+          "when": "editorHasSelection"
+        }
+      ]
+    }
+  }
+}

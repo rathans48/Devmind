@@ -8,3 +8,5 @@ supabase>=2.4.0
 redis>=5.0.0
 python-multipart>=0.0.9
 langchain-text-splitters>=0.0.1
+python-dotenv>=1.0.0
+langchain-core>=0.2.0
