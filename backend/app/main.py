@@ -4,11 +4,12 @@ import sys
 import threading
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
-
+from backend.app.services.optimization import query_semantic_cache, update_semantic_cache, route_model_by_complexity
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, SystemMessage
+from backend.app.services.analytics import get_platform_metrics
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -126,7 +127,7 @@ def _apply_command_state_patch(
         patch["review_approved"] = True
 
     elif command == "explain":
-        patch["current_agent"] = "docs_agent"
+        patch["current_agent"] = "explain"
 
     return patch
 
@@ -203,34 +204,88 @@ def _build_initial_state(
     return initial_state
 
 
-def _run_graph_stream(
-    initial_state: Dict[str, Any],
-    session_id: str,
-    queue: asyncio.Queue,
-    loop: asyncio.AbstractEventLoop,
-) -> None:
+def _run_graph_stream(initial_state: dict, session_id: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    """
+    Background thread worker that executes the LangGraph engine instance.
+    Accumulates distinct agent node outputs into a continuous, multi-stage 
+    report to prevent subsequent nodes from overwriting previous results.
+    """
     from agents.graph import app_engine
-
+    
     config = {"configurable": {"thread_id": session_id}}
-
+    accumulated_nodes = {}  # 🧠 Tracks the final response text per specific agent node
+    
     try:
-        for event in app_engine.stream(initial_state, config):
-            for node_name, state_patch in event.items():
-                loop.call_soon_threadsafe(
-                    queue.put_nowait,
-                    _format_sse_payload(node_name, state_patch),
-                )
-    except Exception as exc:
-        error_payload = {
-            "active_node": "error",
-            "latest_artifact": str(exc),
-        }
-        loop.call_soon_threadsafe(
-            queue.put_nowait,
-            f"data: {json.dumps(error_payload)}\n\n",
-        )
+        for chunk in app_engine.stream(initial_state, config, stream_mode="updates"):
+            if not chunk:
+                continue
+            
+            nodes = list(chunk.keys())
+            if not nodes:
+                continue
+            node_name = nodes[0]
+            node_output = chunk[node_name]
+            
+            latest_artifact = ""
+            
+            if isinstance(node_output, dict):
+                # Track A: Extract code array components
+                artifacts = node_output.get("suggested_code_artifacts", [])
+                if artifacts and len(artifacts) > 0:
+                    latest_artifact = artifacts[-1]
+                    
+                # Track B: Extract common dictionary text keys
+                if not latest_artifact:
+                    for field in ["explanation", "documentation", "feedback", "review_report", "output", "generation", "text", "response"]:
+                        if field in node_output and node_output[field]:
+                            val = node_output[field]
+                            latest_artifact = str(val[-1]) if isinstance(val, list) else str(val)
+                            break
+                
+                # Track C: Extract structured message content strings safely
+                if not latest_artifact and "messages" in node_output:
+                    msgs = node_output["messages"]
+                    if msgs:
+                        last_msg = msgs[-1]
+                        msg_type = getattr(last_msg, "type", "")
+                        if msg_type in ["ai", "assistant"] or last_msg.__class__.__name__ == "AIMessage":
+                            latest_artifact = getattr(last_msg, "content", "")
+            
+            # If the current node successfully produced fresh text, commit it to the run profile
+            if latest_artifact and latest_artifact.strip():
+                accumulated_nodes[node_name] = latest_artifact.strip()
+                
+                # Compile a beautifully structured, progressive multi-stage report
+                combined_report = ""
+                for name, content in accumulated_nodes.items():
+                    # Format node names into clean, readable UI headers
+                    display_name = name.replace("_", " ").title()
+                    if "Debug" in display_name:
+                        display_name = "🛠️ " + display_name
+                    elif "Doc" in display_name:
+                        display_name = "📄 " + display_name
+                    elif "Explain" in display_name:
+                        display_name = "💡 " + display_name
+                    elif "Review" in display_name:
+                        display_name = "🔍 " + display_name
+                        
+                    combined_report += f"## {display_name}\n{content}\n\n---\n\n"
+                
+                # Trim the trailing markdown rule separator safely
+                if combined_report.endswith("\n\n---\n\n"):
+                    combined_report = combined_report[:-7]
+                    
+                payload = {
+                    "active_node": node_name,
+                    "latest_artifact": combined_report.strip()
+                }
+                data_string = f"data: {json.dumps(payload)}\n\n"
+                asyncio.run_coroutine_threadsafe(queue.put(data_string), loop)
+            
+    except Exception as e:
+        print(f"\n[Graph Stream Error] Processing subsystem crashed: {e}")
     finally:
-        loop.call_soon_threadsafe(queue.put_nowait, None)
+        asyncio.run_coroutine_threadsafe(queue.put(None), loop)
 
 
 async def agent_stream_generator(
@@ -241,6 +296,23 @@ async def agent_stream_generator(
     image_base64: Optional[str],
     image_mime: Optional[str],
 ) -> AsyncGenerator[str, None]:
+    
+    has_image = bool(image_base64)
+    
+    # 1. Run Semantic Cache Lookup to protect quotas and tokens
+    cached_response = query_semantic_cache(prompt, command)
+    if cached_response:
+        payload = {
+            "active_node": "semantic_cache_hit",
+            "latest_artifact": cached_response,
+        }
+        yield f"data: {json.dumps(payload)}\n\n"
+        return
+
+    # 2. Dynamic Model Routing Metrics
+    target_model, cost_factor = route_model_by_complexity(prompt, command, has_image)
+    print(f"[Model Router] ---> Assigning target token engine: {target_model} (Est. Cost Factor: {cost_factor})")
+
     initial_state = _build_initial_state(
         prompt=prompt,
         workspace_id=workspace_id,
@@ -260,12 +332,47 @@ async def agent_stream_generator(
     )
     worker.start()
 
+    accumulated_final_text = ""
+    
+    # 3. Pristine, Uninterrupted Stream Processing Loop
     while True:
         chunk = await queue.get()
         if chunk is None:
-            yield "data: [DONE]\n\n"
+            # Update the local semantic optimization cache store
+            if accumulated_final_text.strip():
+                try:
+                    update_semantic_cache(prompt, command, accumulated_final_text)
+                except Exception:
+                    pass
+            
+            # Fire the database synchronization completely out-of-band to a background thread pool.
+            # This allows the loop to break naturally and lets FastAPI close the HTTP context natively.
+            try:
+                from agents.graph import database_checkpointer
+                if hasattr(database_checkpointer, "flush_to_supabase"):
+                    asyncio.create_task(asyncio.to_thread(database_checkpointer.flush_to_supabase, session_id))
+            except Exception as e:
+                print(f"[Background Task Error] Failed to schedule database sync: {e}")
+                
             break
+            
+        # Safely capture text updates for the cache without throwing type exceptions
+        try:
+            chunk_str = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+            if "latest_artifact" in chunk_str:
+                # Basic string processing fallback to locate response content text frames
+                clean_json = chunk_str.replace("data: ", "").strip()
+                parsed_chunk = json.loads(clean_json)
+                if isinstance(parsed_chunk, dict) and parsed_chunk.get("latest_artifact"):
+                    accumulated_final_text = parsed_chunk["latest_artifact"]
+        except Exception:
+            pass
+            
+        # Yield the raw chunk exactly as it was generated by the core specialist agents
         yield chunk
+        
+        # Microscopic pacing break to allow the Windows OS network stack to flush TCP buffers
+        await asyncio.sleep(0.02)
 
 
 @app.post("/api/agent/stream")
@@ -295,6 +402,16 @@ async def agent_stream(
     )
 
 
+@app.get("/api/analytics/summary")
+async def analytics_summary():
+    """
+    Exposes aggregated system latency, model cost tracking, 
+    and operational usage stats to the monitoring dashboard.
+    """
+    metrics = get_platform_metrics()
+    return metrics
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "devmind-backend"}
+

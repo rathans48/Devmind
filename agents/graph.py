@@ -10,18 +10,22 @@ from agents.specialist.docs_agent import run_docs_agent
 from agents.persistence import SupabaseCheckpointSaver
 
 def entry_router(state: AgentState) -> Literal["code_agent", "debug_agent", "docs_agent", "review_agent"]:
-    """
-    Inspects the initial routing token state to dispatch payloads directly 
-    to the specialist agent equipped to handle the target task command format.
-    """
+    """ Inspects the initial command token to route to the correct starting node. """
     agent = state.get("current_agent", "code_agent")
     if agent in ["debug", "debug_agent"]:
         return "debug_agent"
-    elif agent in ["document", "explain", "docs_agent"]:
+    elif agent in ["document", "docs_agent"]:
         return "docs_agent"
+    elif agent in ["explain"]:
+        return "code_agent"
     elif agent in ["review", "review_agent"]:
         return "review_agent"
     return "code_agent"
+
+def post_code_router(state: AgentState) -> Literal["review_agent", "__end__"]:
+    if state.get("current_agent") == "explain":
+        return END  # Gracefully finish the execution pipeline right here
+    return "review_agent"  # Standard code generation path proceeds to validation
 
 def evaluation_router(state: AgentState) -> Literal["docs_agent", "debug_agent"]:
     if state.get("review_approved", False):
@@ -36,7 +40,7 @@ builder.add_node("review_agent", run_review_agent)
 builder.add_node("debug_agent", run_debug_agent)
 builder.add_node("docs_agent", run_docs_agent)
 
-# Bind the dynamic entry router rule to the start node transition layer
+# Bind the entry point configurations
 builder.add_conditional_edges(
     START,
     entry_router,
@@ -48,7 +52,16 @@ builder.add_conditional_edges(
     }
 )
 
-builder.add_edge("code_agent", "review_agent")
+# 🧠 FIX: Replace the old static builder.add_edge("code_agent", "review_agent")
+# with this conditional rule layout
+builder.add_conditional_edges(
+    "code_agent",
+    post_code_router,
+    {
+        "review_agent": "review_agent",
+        END: END
+    }
+)
 
 builder.add_conditional_edges(
     "review_agent",

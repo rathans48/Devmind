@@ -25,7 +25,8 @@ def run_review_agent(state: AgentState) -> dict:
     # Force the model to return structured data matching our Pydantic class
     structured_llm = llm.with_structured_output(ReviewValidationResult)
     
-    latest_artifact = state.get("suggested_code_artifacts", [""])[-1]
+    artifacts = state.get("suggested_code_artifacts", [])
+    latest_artifact = artifacts[-1] if artifacts else state.get("prompt", "")
     
     system_instruction = (
         "You are an elite automated Senior Code Reviewer at DevMind.\n"
@@ -45,8 +46,22 @@ def run_review_agent(state: AgentState) -> dict:
     if result.errors_found:
         print(f"[Review Gate Feedback] Errors Surfaced: {result.errors_found}")
         
+    status_title = "✅ CODE BASE PASSED GATE" if result.review_approved else "❌ CODE BASE REJECTED"
+    feedback_markdown = (
+        f"### Static Quality Review: {status_title}\n"
+        f"**Quality Score Assessment:** {result.quality_score}/100\n\n"
+    )
+    if result.errors_found:
+        feedback_markdown += f"**Surfaced Issues & Architecture Violations:**\n{result.errors_found}"
+    else:
+        feedback_markdown += "No critical compiler syntax errors or hidden vulnerabilities discovered."
+
+    # 🧠 FIX: Return keys that the greedy stream parser tracks natively
+    from langchain_core.messages import AIMessage
     return {
         "current_agent": "review_agent",
         "review_approved": result.review_approved,
-        "errors_found": result.errors_found
+        "errors_found": result.errors_found,
+        "feedback": feedback_markdown,               # Caught by string property tracking
+        "messages": [AIMessage(content=feedback_markdown)] # Caught by historical sequence fallback
     }

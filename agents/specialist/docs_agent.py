@@ -14,7 +14,9 @@ def run_docs_agent(state: AgentState) -> dict:
     print("\n[AI Engine] ---> Invoking Documentation Agent LLM...")
     llm = get_gemini_client()
     
-    approved_artifact = state.get("suggested_code_artifacts", [""])[-1]
+    # 🧠 Defensive Check: Handle empty lists safely and fall back to the base prompt if needed
+    artifacts = state.get("suggested_code_artifacts", [])
+    approved_artifact = artifacts[-1] if artifacts else state.get("prompt", "")
     
     system_instruction = (
         "You are the Technical Documentation Specialist Agent for DevMind.\n"
