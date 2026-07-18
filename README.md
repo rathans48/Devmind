@@ -1,29 +1,5 @@
-# DevMind 
-
-A multi-agent AI software engineering assistant that helps developers write, review, debug, and document code seamlessly. 
-
----
-
-## Core Features & User Stories
-
-### 1. Multi-Source RAG Contextual Ingestion
-* **User Story:** As a developer, I want to ingest entire GitHub repositories, stack traces, and API documentation PDFs into a single workspace so that the assistant generates code strictly tailored to my project's existing conventions.
-
-### 2. Multi-Agent LangGraph Orchestration
-* **User Story:** As an engineer, I want to submit complex feature requests so that dedicated specialist agents (Code, Debug, Review, Docs) can collaborate, write, validate, and document code without manual handoffs.
-
-### 3. Multi-Modal Vision Debugging
-* **User Story:** As a frontend developer, I want to upload a screenshot of a broken UI component or an unhandled console trace directly into the assistant so it can visually identify the issue and cross-reference my source code for a fix.
-
-### 4. Semantic Cache & Cost Optimization Engine
-* **User Story:** As an administrator, I want the application to transparently check if a developer's request has been answered previously across the organization to eliminate redundant LLM API calls and lower token expenditure.
-
-### 5. Human-in-the-Loop (HITL) Session Persistence
-* **User Story:** As a developer, I want the multi-agent system to pause execution and ask for my explicit permission before it modifies critical production-grade configuration files.
-
----
-
 <div align="center">
+
 # DevMind 🧠
  
 ### *Production-Grade Multi-Agent AI Software Engineering Assistant*
@@ -49,7 +25,7 @@ A multi-agent AI software engineering assistant that helps developers write, rev
 DevMind is a full-stack, multi-agent AI system that assists developers across the software development lifecycle. You describe a task in natural language — *"add JWT auth to this Express app"* — and a coordinated team of specialist AI agents writes the code, audits it for security flaws, fixes any issues, and generates the documentation. No manual handoffs. No context switching.
  
 Built as a capstone project demonstrating production patterns in LLM orchestration, RAG pipelines, multi-modal AI, and LLMOps.
- 
+
 ---
  
 ## Core Features
@@ -148,6 +124,7 @@ devmind/
 ├── agents/
 │   ├── graph.py                    # LangGraph workflow definition
 │   ├── state.py                    # Shared AgentState schema
+│   ├── persistence.py              # Supabase Connection
 │   └── specialist/
 │       ├── code_agent.py
 │       ├── debug_agent.py
@@ -163,19 +140,16 @@ devmind/
 │   │       └── analytics.py        # Cost & cache analytics
 │   ├── services/
 │   │   ├── rag_pipeline.py         # Chunking, embedding, retrieval
-│   │   └── cache_service.py        # Semantic cache logic
+│   │   ├── optimization.py         # Semantic cache logic
+│   │   └── analytics.py            # Analytics of usage and more  
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── app/
-│   │   ├── page.tsx                # Landing page
-│   │   └── workspace/page.tsx      # Main chat workspace
-│   └── components/
-│       ├── chat-window.tsx         # SSE streaming chat UI
-│       ├── file-explorer.tsx       # Ingested codebase tree
-│       └── cost-dashboard.tsx      # Live token cost tracker
+│   ├── src/components/
+│       ├── ChatFeedbackState.tsx       
+│       ├── ChatInterface.tsx       # Main chat workspace
+│       └── FileUpload.tsx          # File Upload component 
 ├── evals/
-│   ├── dataset.json                # Golden Q&A evaluation set
 │   └── run_evals.py                # RAGAs evaluation runner
 ├── docker-compose.yml
 └── README.md
