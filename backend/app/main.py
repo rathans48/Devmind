@@ -2,6 +2,7 @@ import asyncio
 import json
 import sys
 import threading
+import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 from backend.app.services.optimization import query_semantic_cache, update_semantic_cache, route_model_by_complexity
@@ -205,6 +206,21 @@ def _build_initial_state(
 
 
 def _run_graph_stream(initial_state: dict, session_id: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
+    from agents.graph import app_engine
+    from langfuse.langchain import CallbackHandler
+    
+    # 🧠 Initialize the contextual runtime trace callback link
+    langfuse_callback = CallbackHandler(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        host=os.getenv("LANGFUSE_HOST")
+    )
+    
+    # Bind the callback alongside your Supabase thread checkpointer configuration
+    config = {
+        "configurable": {"thread_id": session_id},
+        "callbacks": [langfuse_callback]
+    }
     """
     Background thread worker that executes the LangGraph engine instance.
     Accumulates distinct agent node outputs into a continuous, multi-stage 

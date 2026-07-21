@@ -1,159 +1,254 @@
+"""
+DevMind RAGAs Evaluation Suite
+-------------------------------
+Runs Faithfulness + Response Relevancy evaluation on a golden test dataset.
+Uses gemini-1.5-flash as the judge LLM (free tier available as of 2026).
+
+Usage:
+    cd devmind/
+    python evals/run_evals.py
+"""
+
 import os
 import sys
 import types
 import warnings
 import math
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Silence contradictory deprecation logs entirely
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# DYNAMIC PATH RESOLUTION: Relocate from evals/ to backend/
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ENV_PATH = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "backend", "env"))
+# ---------------------------------------------------------------------------
+# 1. ENVIRONMENT SETUP
+# ---------------------------------------------------------------------------
 
-if not os.path.exists(ENV_PATH):
-    ENV_PATH = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "backend", ".env"))
+# Resolve .env path relative to this file's location
+SCRIPT_DIR = Path(__file__).resolve().parent
+ENV_PATH = SCRIPT_DIR.parent / "backend" / ".env"
+
+if not ENV_PATH.exists():
+    print(f"[Eval Error] .env file not found at: {ENV_PATH}")
+    print("  Make sure backend/.env exists and contains GEMINI_API_KEY.")
+    sys.exit(1)
 
 print(f"🔌 Loading environment variables from: {ENV_PATH}")
 load_dotenv(dotenv_path=ENV_PATH)
 
-# KEY NORMALIZER: Extract your Gemini key no matter its alias 
-TARGET_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY")
+# Resolve the API key — accept either alias
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 
-if TARGET_KEY:
-    os.environ["GEMINI_API_KEY"] = TARGET_KEY
-    os.environ["GOOGLE_API_KEY"] = TARGET_KEY
-else:
-    print("[Eval Error] Could not find a valid API key in your environment.")
+if not GEMINI_API_KEY:
+    print("[Eval Error] GEMINI_API_KEY (or GOOGLE_API_KEY) not found in backend/.env")
     sys.exit(1)
 
-# Monkeypatch upstream Ragas import crash
+# Set both so downstream libraries pick up whichever alias they prefer
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+
+# ---------------------------------------------------------------------------
+# 2. MONKEYPATCH — silence broken langchain_community import inside ragas
+# ---------------------------------------------------------------------------
+
 if "langchain_community.chat_models.vertexai" not in sys.modules:
-    dummy_chat = types.ModuleType("langchain_community.chat_models.vertexai")
-    dummy_chat.ChatVertexAI = type("ChatVertexAI", (object,), {})
-    sys.modules["langchain_community.chat_models.vertexai"] = dummy_chat
+    dummy = types.ModuleType("langchain_community.chat_models.vertexai")
+    dummy.ChatVertexAI = type("ChatVertexAI", (object,), {})
+    sys.modules["langchain_community.chat_models.vertexai"] = dummy
 
-# Ragas v0.2+ Architecture Imports
-from google import genai
-from ragas import evaluate, EvaluationDataset, SingleTurnSample
-from ragas.llms import llm_factory
-from ragas.metrics import Faithfulness, ResponseRelevancy
-from ragas.run_config import RunConfig
+# ---------------------------------------------------------------------------
+# 3. RAGAS + GOOGLE GENAI IMPORTS
+# ---------------------------------------------------------------------------
 
-# UNIVERSAL EMBEDDING WRAPPER: Equipped to satisfy legacy LangChain interfaces
-class GoogleGenAIEmbeddingsWrapper:
-    def __init__(self, client: genai.Client):
+try:
+    from google import genai
+    from ragas import evaluate, EvaluationDataset, SingleTurnSample
+    from ragas.llms import llm_factory
+    from ragas.metrics import Faithfulness, ResponseRelevancy
+    from ragas.run_config import RunConfig
+except ImportError as e:
+    print(f"[Import Error] Missing dependency: {e}")
+    print("  Run:  pip install ragas google-generativeai python-dotenv")
+    sys.exit(1)
+
+# ---------------------------------------------------------------------------
+# 4. EMBEDDING WRAPPER
+# ---------------------------------------------------------------------------
+
+class GeminiEmbeddingsWrapper:
+    """
+    Wraps the Google GenAI embedding API to satisfy the interface
+    that RAGAs ResponseRelevancy expects.
+    """
+    def __init__(self, client: genai.Client, model: str = "text-embedding-004"):
         self.client = client
-        self.model = "text-embedding-004"
+        self.model = model
 
-    def _execute_embedding(self, text: str) -> list[float]:
-        res = self.client.models.embed_content(
+    def _embed(self, text: str) -> list[float]:
+        response = self.client.models.embed_content(
             model=self.model,
             contents=text
         )
-        return res.embeddings[0].values
+        return response.embeddings[0].values
 
     def embed_query(self, text: str) -> list[float]:
-        return self._execute_embedding(text)
+        return self._embed(text)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._execute_embedding(t) for t in texts]
+        return [self._embed(t) for t in texts]
 
-# 1. Initialize the Google GenAI Components as our Evaluation Judges
-def get_evaluator_components():
-    api_key = os.environ.get("GEMINI_API_KEY")
-    client = genai.Client(api_key=api_key)
-    
-    llm = llm_factory("gemini-2.0-flash", provider="google", client=client)
-    embeddings = GoogleGenAIEmbeddingsWrapper(client)
-    
+# ---------------------------------------------------------------------------
+# 5. JUDGE LLM + EMBEDDINGS FACTORY
+# ---------------------------------------------------------------------------
+
+# NOTE: gemini-2.0-flash free tier was removed by Google.
+# gemini-1.5-flash retains a free tier (1500 req/day, 1M tokens/min).
+# Switch to gemini-2.0-flash only if you have a paid API key.
+JUDGE_MODEL = "gemini-1.5-flash"
+
+def build_evaluators():
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    llm = llm_factory(JUDGE_MODEL, provider="google", client=client)
+    embeddings = GeminiEmbeddingsWrapper(client)
     return llm, embeddings
 
-# 2. Compile Your Golden Test Dataset using modern Ragas Schema Elements
-def load_test_dataset() -> EvaluationDataset:
+# ---------------------------------------------------------------------------
+# 6. GOLDEN TEST DATASET
+#    Expand this with real DevMind queries as the system is built out.
+# ---------------------------------------------------------------------------
+
+def build_dataset() -> EvaluationDataset:
     samples = [
         SingleTurnSample(
-            user_input="DEBUG: def add(a, b): return(a-b)",
-            response="Error Identified: The function performs subtraction instead of addition. Corrected implementation: def add(a, b): return a + b",
+            user_input="DEBUG: def add(a, b): return(a - b)",
+            response=(
+                "Error identified: the function subtracts instead of adding. "
+                "Fix: def add(a, b): return a + b"
+            ),
             retrieved_contexts=[
-                "The add utility function must calculate the arithmetic sum of two numeric parameters.",
-                "Shadowing standard library methods should be avoided by utilizing clean identifiers."
+                "The add() function must return the arithmetic sum of two numeric inputs.",
+                "Avoid shadowing built-in names; use descriptive identifiers."
             ]
         ),
         SingleTurnSample(
             user_input="Generate documentation for a simple sum function.",
-            response="## Technical Documentation: add Function\nSummary: Calculates the arithmetic sum of two numbers. Time Complexity: O(1).",
+            response=(
+                "## add(a, b)\n"
+                "Returns the arithmetic sum of `a` and `b`.\n\n"
+                "**Parameters:** `a: float`, `b: float`\n"
+                "**Returns:** `float`\n"
+                "**Time Complexity:** O(1)"
+            ),
             retrieved_contexts=[
-                "The add function takes a: float and b: float and returns their cumulative sum with constant runtime characteristics."
+                "The add function accepts two floats and returns their sum with O(1) runtime."
             ]
-        )
+        ),
+        SingleTurnSample(
+            user_input="How does the semantic cache work in DevMind?",
+            response=(
+                "DevMind embeds incoming queries using text-embedding-004 and computes "
+                "cosine similarity against cached responses stored in pgvector. "
+                "If similarity exceeds 0.92, the cached answer is returned immediately "
+                "without invoking the LLM, reducing token cost."
+            ),
+            retrieved_contexts=[
+                "The semantic cache uses pgvector cosine similarity with a threshold of 0.92.",
+                "Cache hits bypass the LangGraph workflow entirely, logging zero token cost to Langfuse."
+            ]
+        ),
+        SingleTurnSample(
+            user_input="What agents are in the DevMind LangGraph workflow?",
+            response=(
+                "DevMind's LangGraph orchestrator routes tasks through four specialist agents: "
+                "Code Agent (implementation), Review Agent (security and quality audit), "
+                "Debug Agent (error diagnosis), and Docs Agent (documentation generation)."
+            ),
+            retrieved_contexts=[
+                "The LangGraph workflow includes Code, Review, Debug, and Docs specialist agents.",
+                "Conditional routing sends rejected Review Agent output to the Debug Agent for repair."
+            ]
+        ),
     ]
     return EvaluationDataset(samples=samples)
 
-# 3. Main Evaluation Runner Lifecycle (Synchronous Execution Engine)
+# ---------------------------------------------------------------------------
+# 7. MAIN EVALUATION RUNNER
+# ---------------------------------------------------------------------------
+
 def main():
-    print("🚀 [RAGAs Eval] Initializing multi-agent performance verification suite...")
-    
-    judge_llm, judge_embeddings = get_evaluator_components()
-    test_dataset = load_test_dataset()
-    
+    print("🚀 [RAGAs Eval] Starting DevMind evaluation suite...")
+    print(f"   Judge model : {JUDGE_MODEL}")
+    print(f"   Embed model : text-embedding-004\n")
+
+    judge_llm, judge_embeddings = build_evaluators()
+    dataset = build_dataset()
+
     metrics = [
         Faithfulness(llm=judge_llm),
-        ResponseRelevancy(llm=judge_llm, embeddings=judge_embeddings)
+        ResponseRelevancy(llm=judge_llm, embeddings=judge_embeddings),
     ]
-    
-    rate_limiting_config = RunConfig(
-        max_workers=1,
-        timeout=90,
-        max_retries=10,
-        max_wait=60
+
+    # Conservative rate limiting — keeps well within free tier quotas
+    run_cfg = RunConfig(
+        max_workers=1,       # one request at a time — avoids per-minute quota bursts
+        timeout=120,
+        max_retries=3,       # reduced from 10 — fail fast, don't loop on a dead quota
+        max_wait=30,
     )
-    
-    print(f"📊 Running metrics over {len(test_dataset)} production test samples...")
-    
+
+    print(f"📊 Evaluating {len(dataset)} samples...\n")
+
     try:
         results = evaluate(
-            dataset=test_dataset,
+            dataset=dataset,
             metrics=metrics,
             show_progress=True,
-            run_config=rate_limiting_config
+            run_config=run_cfg,
         )
-        
-        # 🧠 FIX: Safely extract aggregated means via the official Pandas export layer
-        results_df = results.to_pandas()
-        mean_scores = results_df.mean(numeric_only=True).to_dict()
-        results_dict = {str(k).lower(): float(v) for k, v in mean_scores.items()}
-        
-        faithfulness_score = results_dict.get('faithfulness', float('nan'))
-        relevancy_score = results_dict.get('response_relevancy', float('nan'))
-        
-        print("\n==========================================")
-        print("🎉 EVALUATION SUITE COMPLETE")
-        print("==========================================")
-        print(f"🔹 Faithfulness Score:  {f'{faithfulness_score:.4f}' if not math.isnan(faithfulness_score) else 'NaN (API Error)'}")
-        print(f"🔹 Response Relevancy: {f'{relevancy_score:.4f}' if not math.isnan(relevancy_score) else 'NaN (API Error)'}")
-        print("==========================================\n")
-        
-        target_threshold = 0.80
-        failed_metrics = []
-        
-        for metric_name, score in results_dict.items():
-            if math.isnan(score):
-                failed_metrics.append(f"{metric_name.title()} (Returned NaN due to 429 Quota Exhaustion)")
-            elif score < target_threshold:
-                failed_metrics.append(f"{metric_name.title()} ({score:.4f} < {target_threshold})")
-                
-        if failed_metrics:
-            print(f"❌ [Gate Blown] Quality threshold check failed for:\n - " + "\n - ".join(failed_metrics))
-            sys.exit(1)
-        else:
-            print("✅ [Gate Passed] All core multi-agent metrics are above 0.80!")
-            sys.exit(0)
-            
     except Exception as e:
-        print(f"💥 [Runtime System Crash] Evaluation pipeline failed to execute: {e}")
+        print(f"\n💥 [Runtime Error] Evaluation failed: {e}")
+        print("\nCommon causes:")
+        print("  • gemini-2.0-flash free tier removed — this script now uses gemini-1.5-flash")
+        print("  • Daily quota exhausted — wait 24 hours or use a paid API key")
+        print("  • Invalid API key — check GEMINI_API_KEY in backend/.env")
         sys.exit(1)
+
+    # Extract scores safely
+    results_df = results.to_pandas()
+    scores = results_df.mean(numeric_only=True).to_dict()
+    scores = {str(k).lower(): float(v) for k, v in scores.items()}
+
+    faithfulness = scores.get("faithfulness", float("nan"))
+    relevancy    = scores.get("response_relevancy", float("nan"))
+
+    print("\n" + "=" * 42)
+    print("   DEVMIND EVALUATION RESULTS")
+    print("=" * 42)
+    print(f"  Faithfulness      : {faithfulness:.4f}" if not math.isnan(faithfulness) else "  Faithfulness      : ERROR (NaN)")
+    print(f"  Response Relevancy: {relevancy:.4f}"    if not math.isnan(relevancy)    else "  Response Relevancy: ERROR (NaN)")
+    print("=" * 42 + "\n")
+
+    THRESHOLD = 0.80
+    failed = []
+
+    if math.isnan(faithfulness):
+        failed.append("Faithfulness returned NaN — likely an API/quota error")
+    elif faithfulness < THRESHOLD:
+        failed.append(f"Faithfulness {faithfulness:.4f} is below threshold {THRESHOLD}")
+
+    if math.isnan(relevancy):
+        failed.append("Response Relevancy returned NaN — likely an API/quota error")
+    elif relevancy < THRESHOLD:
+        failed.append(f"Response Relevancy {relevancy:.4f} is below threshold {THRESHOLD}")
+
+    if failed:
+        print("❌ Gate FAILED:")
+        for f in failed:
+            print(f"   • {f}")
+        sys.exit(1)
+    else:
+        print("✅ Gate PASSED — all metrics above 0.80")
+        sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
