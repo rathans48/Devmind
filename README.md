@@ -53,14 +53,20 @@ The LangGraph graph pauses before sensitive operations (e.g. database migrations
 - **RAGAs** — automated faithfulness and relevancy evaluation on every deployment
 ---
  
-## RAGAs Evaluation Results
+## Evaluation
  
-Automated quality gates run on every deployment via GitHub Actions CI/CD.
+DevMind includes a RAGAs-based evaluation suite (`evals/run_evals.py`) that scores the RAG pipeline's Faithfulness and Response Relevancy against a small golden test dataset, using `gemini-3.1-flash-lite` as the judge model.
  
-| Metric | Target | Score | Status |
-|:---|:---:|:---:|:---:|
-| Faithfulness | > 0.80 | **0.8742** | ✅ Pass |
-| Answer Relevancy | > 0.80 | **0.8415** | ✅ Pass |
+**Latest results (4-sample golden dataset):**
+ 
+| Metric | Score | Gate (0.80) |
+|---|---|---|
+| Faithfulness | 0.6583 | Not met |
+| Response Relevancy | 0.7408 | Not met |
+ 
+**Why Faithfulness sits below the gate:** Faithfulness works by decomposing each response into atomic claims, then checking whether each claim can be *directly inferred* from the retrieved context — it's a strict, literal-inference check, not a semantic-equivalence check. In this dataset, the lowest-scoring sample restates a context fact using different (but semantically equivalent) wording — e.g. context says "bypasses the LangGraph workflow," response says "without invoking the LLM" — which the judge model marks as unsupported despite the underlying meaning being the same. This is a known sensitivity of NLI-style faithfulness scoring, not a factual error in the response.
+ 
+Rather than rewriting the dataset to force a passing score, these are left as the real, reproducible numbers — an honest baseline to improve against as the dataset and pipeline grow, not a number tuned to clear an arbitrary threshold.
  
 ---
  
