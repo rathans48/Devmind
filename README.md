@@ -1,8 +1,6 @@
-<div align="center">
-
 # DevMind 🧠
  
-### *Production-Grade Multi-Agent AI Software Engineering Assistant*
+### *Multi-Agent AI Software Engineering Assistant*
  
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-14-000000?style=flat&logo=nextdotjs&logoColor=white)](https://nextjs.org)
@@ -10,22 +8,17 @@
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2-1C3C3C?style=flat&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![Supabase](https://img.shields.io/badge/Supabase-pgvector-3ECF8E?style=flat&logo=supabase&logoColor=white)](https://supabase.com)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/rathans48/Devmind/blob/main/LICENSE)
  
-**[Live Demo](https://devmind.vercel.app)** · **[API Docs](https://devmind-api.railway.app/docs)** · **[Demo Video (3 min)](https://loom.com/your-link)**
+> Runs locally via Docker Compose — see [Local Setup](#local-setup) below. Live demo and video walkthrough coming soon.
  
-<!-- Replace the line below with an actual demo GIF once the app is running -->
-<!-- ![DevMind Demo](docs/assets/demo.gif) -->
- 
-</div>
 ---
  
 ## What is DevMind?
  
-DevMind is a full-stack, multi-agent AI system that assists developers across the software development lifecycle. You describe a task in natural language — *"add JWT auth to this Express app"* — and a coordinated team of specialist AI agents writes the code, audits it for security flaws, fixes any issues, and generates the documentation. No manual handoffs. No context switching.
+DevMind is a full-stack, multi-agent AI system that assists developers across the software development lifecycle. You describe a task in natural language — *"add JWT auth to this Express app"* — and a coordinated team of specialist AI agents writes the code, audits it for security flaws, fixes any issues, and generates the documentation.
  
-Built as a capstone project demonstrating production patterns in LLM orchestration, RAG pipelines, multi-modal AI, and LLMOps.
-
+Built as a capstone project exploring production patterns in LLM orchestration, RAG pipelines, multi-modal AI, and LLMOps, as part of a 30-day GenAI learning sprint.
 ---
  
 ## Core Features
@@ -165,9 +158,10 @@ devmind/
 - Python 3.11+
 - API keys: OpenAI, Supabase (URL + anon key)
 ### 1. Clone the repository
-```bash
-git clone https://github.com/yourusername/devmind.git
-cd devmind
+ 
+```
+git clone https://github.com/rathans48/Devmind.git
+cd Devmind
 ```
  
 ### 2. Configure environment variables
@@ -240,11 +234,9 @@ Both are connected to a shared **Supabase** project for the vector store, sessio
  
 ## Author
  
-**Rathan** — Final Year CSE Student, Garden City University, Bengaluru
-[LinkedIn](https://linkedin.com/in/yourprofile) · [GitHub](https://github.com/yourusername)
+**Rathan S** — Final Year CSE Student, Garden City University, Bengaluru
+[LinkedIn](https://www.linkedin.com/in/rathan--s) · [GitHub](https://github.com/rathans48)
  
 ---
  
-<div align="center">
 Built as part of a 30-day GenAI learning sprint · MIT License
-</div>
