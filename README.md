@@ -43,7 +43,7 @@ Upload a screenshot of a broken UI or a terminal error trace. The Debug Agent vi
 - Incoming queries are embedded and compared against a cached response store using **cosine similarity** (threshold ≥ 0.92)
 - Cache hits bypass the agent workflow entirely — **zero token cost**
 - A model complexity router automatically selects GPT-4o-mini for simple queries and GPT-4o for complex ones
-- Combined, these reduce LLM inference costs by **40%+** in testing
+
 ### ⏸️ Human-in-the-Loop (HITL) Checkpoints
 The LangGraph graph pauses before sensitive operations (e.g. database migrations, rewriting `docker-compose.yml`) and waits for explicit user approval. The execution state is persisted via `PostgresSaver` so nothing is lost during the pause.
  
