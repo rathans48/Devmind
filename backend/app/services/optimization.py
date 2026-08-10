@@ -20,14 +20,14 @@ def get_router_client():
 # 📐 VECTOR SPACE COSINE SIMILARITY MATH
 # ==========================================
 def _get_embedding(text: str) -> Optional[list[float]]:
-    """Generates a dense vector footprint using production-grade text-embedding-004."""
+    """Generates a dense vector footprint using production-grade gemini-embedding-001."""
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
     try:
         client = genai.Client(api_key=api_key)
         response = client.models.embed_content(
-            model="text-embedding-004",
+            model="gemini-embedding-001",
             contents=text.strip()
         )
         return response.embeddings[0].values

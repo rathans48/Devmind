@@ -297,6 +297,7 @@ function AnalyticsDashboard({
 // MAIN COMPONENT
 // ===========================================================================
 export default function ChatInterface() {
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
   const { isStreaming, isLoading, activeNode, latestArtifact, startStream, abort } =
     useAgentStream();
 
@@ -394,6 +395,7 @@ export default function ChatInterface() {
 
     const formData = new FormData();
     formData.append("prompt", prompt || trimmed);
+    formData.append("session_id", sessionIdRef.current);
     if (command) formData.append("command", command);
     if (uploadedImage) {
       formData.append("image_base64", uploadedImage.base64);

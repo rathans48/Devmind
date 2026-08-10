@@ -18,20 +18,22 @@ class RAGPipelineService:
 
     def _get_native_embedding(self, text: str) -> List[float]:
         """
-        Calls Google's native text-embedding-004 API via a direct, high-speed REST connection.
+        Calls Google's native gemini-embedding-001 API via a direct, high-speed REST connection.
+        Pinned to 768 dimensions to match the existing pgvector column schema.
         """
         try:
             conn = http.client.HTTPSConnection("generativelanguage.googleapis.com")
-            payload = json.dumps({"model": "models/text-embedding-004", "content": {"parts": [{"text": text}]}})
+            payload = json.dumps({"model": "models/gemini-embedding-001", "content": {"parts": [{"text": text}]}, "outputDimensionality": 768})
             headers = {'Content-Type': 'application/json'}
             
-            conn.request("POST", f"/v1beta/models/text-embedding-004:embedContent?key={self.api_key}", payload, headers)
+            conn.request("POST", f"/v1beta/models/gemini-embedding-001:embedContent?key={self.api_key}", payload, headers)
             res = conn.getresponse()
             data = json.loads(res.read().decode("utf-8"))
             
             return data["embedding"]["values"]
         except Exception as e:
-            # If network fails or key limits hit, fall back to a clean placeholder array matching 768 dimensions
+            # If network fails or key limits hit, fall back to a clean placeholder array matching 768 dimensions, pinned via outputDimensionality above
+            # the pgvector column's fixed dimension (768), pinned via outputDimensionality above
             return [0.0] * 768
 
     def chunk_and_ingest_code(self, workspace_id: str, file_path: str, raw_content: str):

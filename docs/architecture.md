@@ -103,7 +103,7 @@ workflow.add_conditional_edges(
 To prevent context drift and hallucinations, DevMind runs a customized Multi-Source Retrieval-Augmented Generation (RAG) architecture using Abstract Syntax Tree (AST) analysis and vector lookup.
 
 ```
-[ Codebase / Docs ] ──► [ AST / Recursive Text Splitter ] ──► [ text-embedding-3-small ] ──► [ pgvector / Supabase ]
+[ Codebase / Docs ] ──► [ AST / Recursive Text Splitter ] ──► [ gemini-embedding-001 (768 dimensions, pinned via outputDimensionality) ] ──► [ pgvector / Supabase ]
 ```
 
 ### Ingestion & Vector Subsystem Rules

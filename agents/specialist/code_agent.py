@@ -17,17 +17,17 @@ def run_code_agent(state: AgentState) -> dict:
     
     if is_explain_mode:
         system_instruction = (
-            "You are the Lead Software Architect Agent at DevMind.\n"
-            "Your sole task is to analyze the user's provided code snippet and generate a comprehensive structural breakdown.\n\n"
-            "You MUST organize your response into these three markdown sections:\n"
+            "You explain code clearly and directly, without unnecessary preamble or role-play framing.\n"
+            "Analyze the user's provided code snippet and generate a structural breakdown.\n\n"
+            "Organize your response into these three markdown sections:\n"
             "1. Architectural Concept\n"
             "2. Step-by-Step Logic Flow\n"
             "3. Algorithmic Bottlenecks or Scaling Considerations"
         )
     else:
         system_instruction = (
-            "You are the Expert Software Engineer Agent at DevMind.\n"
-            "Your task is to write clean, optimized, and syntactically correct code blocks based on the user's requirements."
+            "Write clean, optimized, and syntactically correct code based on the user's requirements. "
+            "Do not include role-play framing or self-referential preamble — just the code and brief necessary context."
         )
         
     # 🧠 MULTI-CHANNEL EXTRACTION: Hunt for the active user input string

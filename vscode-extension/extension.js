@@ -1,5 +1,7 @@
 const vscode = require('vscode');
 
+const sessionId = require('crypto').randomUUID();
+
 function activate(context) {
     let disposable = vscode.commands.registerCommand('devmind.inlineReview', async function () {
         const editor = vscode.window.activeTextEditor;
@@ -24,7 +26,7 @@ function activate(context) {
             formData.append('prompt', highlightedCode);
             formData.append('command', 'review');
             formData.append('workspace_id', 'vscode_desktop');
-            formData.append('session_id', 'desktop_session');
+            formData.append('session_id', sessionId);
 
             // 3. Dispatch the payload straight to your running FastAPI server
             const response = await fetch('http://localhost:8000/api/agent/stream', {

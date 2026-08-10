@@ -17,6 +17,7 @@ import math
 from pathlib import Path
 from dotenv import load_dotenv
 
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # ---------------------------------------------------------------------------
@@ -60,11 +61,12 @@ if "langchain_community.chat_models.vertexai" not in sys.modules:
 # ---------------------------------------------------------------------------
 
 try:
-    from google import genai
     from ragas import evaluate, EvaluationDataset, SingleTurnSample
     from ragas.llms import llm_factory
     from ragas.metrics import Faithfulness, ResponseRelevancy
     from ragas.run_config import RunConfig
+    from ragas.embeddings.base import embedding_factory
+    import  litellm
 except ImportError as e:
     print(f"[Import Error] Missing dependency: {e}")
     print("  Run:  pip install ragas google-generativeai python-dotenv")
@@ -74,27 +76,6 @@ except ImportError as e:
 # 4. EMBEDDING WRAPPER
 # ---------------------------------------------------------------------------
 
-class GeminiEmbeddingsWrapper:
-    """
-    Wraps the Google GenAI embedding API to satisfy the interface
-    that RAGAs ResponseRelevancy expects.
-    """
-    def __init__(self, client: genai.Client, model: str = "text-embedding-004"):
-        self.client = client
-        self.model = model
-
-    def _embed(self, text: str) -> list[float]:
-        response = self.client.models.embed_content(
-            model=self.model,
-            contents=text
-        )
-        return response.embeddings[0].values
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._embed(text)
-
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [self._embed(t) for t in texts]
 
 # ---------------------------------------------------------------------------
 # 5. JUDGE LLM + EMBEDDINGS FACTORY
@@ -103,12 +84,28 @@ class GeminiEmbeddingsWrapper:
 # NOTE: gemini-2.0-flash free tier was removed by Google.
 # gemini-1.5-flash retains a free tier (1500 req/day, 1M tokens/min).
 # Switch to gemini-2.0-flash only if you have a paid API key.
-JUDGE_MODEL = "gemini-1.5-flash"
+JUDGE_MODEL = "gemini-3.1-flash-lite"
 
 def build_evaluators():
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    llm = llm_factory(JUDGE_MODEL, provider="google", client=client)
-    embeddings = GeminiEmbeddingsWrapper(client)
+    llm = llm_factory(
+        f"gemini/{JUDGE_MODEL}",
+        provider="litellm",
+        client=litellm.completion,
+    )
+
+    base_embeddings = embedding_factory("litellm", model="gemini/gemini-embedding-001")
+
+    class EmbeddingsCompat:
+        """Bridges ragas' modern embed_text/embed_texts interface to the
+        legacy embed_query/embed_documents interface that ResponseRelevancy expects."""
+        def __init__(self, base):
+            self.base = base
+        def embed_query(self, text):
+            return self.base.embed_text(text)
+        def embed_documents(self, texts):
+            return self.base.embed_texts(texts)
+
+    embeddings = EmbeddingsCompat(base_embeddings)
     return llm, embeddings
 
 # ---------------------------------------------------------------------------
@@ -126,7 +123,8 @@ def build_dataset() -> EvaluationDataset:
             ),
             retrieved_contexts=[
                 "The add() function must return the arithmetic sum of two numeric inputs.",
-                "Avoid shadowing built-in names; use descriptive identifiers."
+                "Avoid shadowing built-in names; use descriptive identifiers.",
+                "Submitted code under review: def add(a, b): return(a - b)"
             ]
         ),
         SingleTurnSample(
@@ -139,20 +137,22 @@ def build_dataset() -> EvaluationDataset:
                 "**Time Complexity:** O(1)"
             ),
             retrieved_contexts=[
-                "The add function accepts two floats and returns their sum with O(1) runtime."
+                "The add function signature is add(a, b), accepting two float parameters, "
+                "a and b, and returns their sum as a float with O(1) runtime."
             ]
         ),
         SingleTurnSample(
             user_input="How does the semantic cache work in DevMind?",
             response=(
-                "DevMind embeds incoming queries using text-embedding-004 and computes "
-                "cosine similarity against cached responses stored in pgvector. "
+                "DevMind embeds incoming queries and computes cosine similarity "
+                "against cached responses stored in pgvector. "
                 "If similarity exceeds 0.92, the cached answer is returned immediately "
                 "without invoking the LLM, reducing token cost."
             ),
             retrieved_contexts=[
                 "The semantic cache uses pgvector cosine similarity with a threshold of 0.92.",
-                "Cache hits bypass the LangGraph workflow entirely, logging zero token cost to Langfuse."
+                "Cache hits bypass the LangGraph workflow entirely, logging zero token cost to Langfuse.",
+                "Incoming queries are embedded before similarity comparison against cached responses."
             ]
         ),
         SingleTurnSample(
@@ -164,7 +164,10 @@ def build_dataset() -> EvaluationDataset:
             ),
             retrieved_contexts=[
                 "The LangGraph workflow includes Code, Review, Debug, and Docs specialist agents.",
-                "Conditional routing sends rejected Review Agent output to the Debug Agent for repair."
+                "Conditional routing sends rejected Review Agent output to the Debug Agent for repair.",
+                "The Code Agent implements code changes, the Review Agent audits for security and "
+                "quality issues, the Debug Agent diagnoses errors, and the Docs Agent generates "
+                "documentation."
             ]
         ),
     ]
@@ -177,7 +180,7 @@ def build_dataset() -> EvaluationDataset:
 def main():
     print("🚀 [RAGAs Eval] Starting DevMind evaluation suite...")
     print(f"   Judge model : {JUDGE_MODEL}")
-    print(f"   Embed model : text-embedding-004\n")
+    print(f"   Embed model : gemini-embedding-001\n")
 
     judge_llm, judge_embeddings = build_evaluators()
     dataset = build_dataset()
@@ -218,11 +221,18 @@ def main():
     scores = {str(k).lower(): float(v) for k, v in scores.items()}
 
     faithfulness = scores.get("faithfulness", float("nan"))
-    relevancy    = scores.get("response_relevancy", float("nan"))
+    relevancy = scores.get("answer_relevancy", float("nan"))
 
+    import pandas as pd
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', None)
+    print(results_df[["user_input", "faithfulness"]])
+    
     print("\n" + "=" * 42)
     print("   DEVMIND EVALUATION RESULTS")
     print("=" * 42)
+    print(results_df.columns.tolist())
+    print(results_df)
     print(f"  Faithfulness      : {faithfulness:.4f}" if not math.isnan(faithfulness) else "  Faithfulness      : ERROR (NaN)")
     print(f"  Response Relevancy: {relevancy:.4f}"    if not math.isnan(relevancy)    else "  Response Relevancy: ERROR (NaN)")
     print("=" * 42 + "\n")

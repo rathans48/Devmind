@@ -15,6 +15,7 @@ class AgentState(TypedDict):
     
     # Orchestration Pointer
     current_agent: str
+    entry_command: Optional[str]
     
     # Artifact Hand-offs
     suggested_code_artifacts: List[str]

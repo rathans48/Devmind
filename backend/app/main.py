@@ -193,6 +193,7 @@ def _build_initial_state(
         "workspace_id": workspace_id,
         "session_id": session_id,
         "current_agent": resolved_command or "code_agent",
+        "entry_command": resolved_command,
         "suggested_code_artifacts": [],
         "review_approved": False,
         "errors_found": None,
@@ -207,28 +208,24 @@ def _build_initial_state(
 
 def _run_graph_stream(initial_state: dict, session_id: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
     from agents.graph import app_engine
+    from langfuse import Langfuse
     from langfuse.langchain import CallbackHandler
     
     # 🧠 Initialize the contextual runtime trace callback link
-    langfuse_callback = CallbackHandler(
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-        host=os.getenv("LANGFUSE_HOST")
+    Langfuse(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+    host=os.getenv("LANGFUSE_HOST")
     )
+
+    langfuse_callback = CallbackHandler()   # no args — reads the client initialized above
     
     # Bind the callback alongside your Supabase thread checkpointer configuration
     config = {
         "configurable": {"thread_id": session_id},
         "callbacks": [langfuse_callback]
     }
-    """
-    Background thread worker that executes the LangGraph engine instance.
-    Accumulates distinct agent node outputs into a continuous, multi-stage 
-    report to prevent subsequent nodes from overwriting previous results.
-    """
-    from agents.graph import app_engine
-    
-    config = {"configurable": {"thread_id": session_id}}
+        
     accumulated_nodes = {}  # 🧠 Tracks the final response text per specific agent node
     
     try:

@@ -30,13 +30,15 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         super().__init__()
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        
+
         if supabase_url and "your-project-id" not in supabase_url and supabase_key:
             self.client: Client = create_client(supabase_url, supabase_key)
         else:
             self.client = None
-            
+
         self._checkpoint_cache: Dict[str, dict] = {}
+        self._pending_writes: Dict[Tuple[str, str], List[Tuple[str, str, Any]]] = {}  # (thread_id, checkpoint_id) -> [(task_id, channel, value)]
+
 
     def put(self, config: dict, checkpoint: Checkpoint, metadata: CheckpointMetadata, new_versions: dict) -> dict:
         """
@@ -75,28 +77,49 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         return config
 
     def put_writes(self, config: dict, writes: Sequence[Tuple[str, Any]], task_id: str) -> None:
-        """ Bypasses intermediate delta writes to mitigate high-frequency socket congestion. """
-        pass
+        """Records pending writes per task so LangGraph can tell a task already ran
+        for this checkpoint step, preventing duplicate node execution on resume."""
+        thread_id = config["configurable"]["thread_id"]
+        checkpoint_id = config["configurable"].get("checkpoint_id", "")
+        key = (thread_id, checkpoint_id)
+
+        if key not in self._pending_writes:
+            self._pending_writes[key] = []
+
+        for channel, value in writes:
+            self._pending_writes[key].append((task_id, channel, value))
 
     def get_tuple(self, config: dict) -> Optional[CheckpointTuple]:
-        """
-        Resolves configurations out of memory first, falling back to database fetches if clear.
-        """
         thread_id = config["configurable"]["thread_id"]
-        
+        checkpoint_id = config["configurable"].get("checkpoint_id", "")
+
+        pending = self._pending_writes.get((thread_id, checkpoint_id), [])
+
         if thread_id in self._checkpoint_cache:
             snapshot = self._checkpoint_cache[thread_id]
-            return CheckpointTuple(config=config, checkpoint=snapshot["checkpoint"], metadata=snapshot["metadata"], parent_config=None)
-            
+            return CheckpointTuple(
+                config=config,
+                checkpoint=snapshot["checkpoint"],
+                metadata=snapshot["metadata"],
+                parent_config=None,
+                pending_writes=pending
+            )
+
         if not self.client:
             return None
-            
+
         try:
-            res = self.client.table("chat_sessions").select("user_preferences").embed("session_id", thread_id).execute()
+            res = self.client.table("chat_sessions").select("user_preferences").eq("session_id", thread_id).execute()
             if res.data and len(res.data) > 0:
                 snapshot = res.data[0]["user_preferences"]
                 self._checkpoint_cache[thread_id] = snapshot
-                return CheckpointTuple(config=config, checkpoint=snapshot["checkpoint"], metadata=snapshot["metadata"], parent_config=None)
+                return CheckpointTuple(
+                    config=config,
+                    checkpoint=snapshot["checkpoint"],
+                    metadata=snapshot["metadata"],
+                    parent_config=None,
+                    pending_writes=pending
+                )
         except Exception:
             return None
         return None
