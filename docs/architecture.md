@@ -128,13 +128,13 @@ Every incoming textual query undergoes evaluation at the FastAPI gateway to inte
                                   │
                   ┌───────────────┴───────────────┐
                   ▼                               ▼
-      Cosine Similarity >= 0.92        Cosine Similarity < 0.92
+      Cosine Similarity >= 0.90        Cosine Similarity < 0.90
           [ CACHE HIT ]                   [ CACHE MISS ]
      Instant Reply to Client          Execute LangGraph Engine
 ```
 
 > ### ⚠️ Operational Cache Rule
-> If vector processing returns an index match where the Cosine Similarity metric is greater than or equal to **0.92**, the payload is intercepted immediately. The system returns the historical output stored in Redis, bypassing token expenditure and achieving zero downstream latency.
+> The semantic cache is an **in-memory, process-local Python dict** (`backend/app/services/optimization.py`), populated with embeddings from **`gemini-embedding-001`**. If an incoming query's cosine similarity to a cached entry is greater than or equal to **0.90** (and the command context matches), the cached response is returned immediately, bypassing token expenditure and achieving zero downstream latency. The cache is **single-worker scoped**: entries are lost on restart and are never shared across multiple workers or containers.
 
 ---
 
@@ -162,17 +162,15 @@ DevMind runs across isolated computing zones, synchronized via environment key v
                      └────────────┬────────────┘
                                   │ HTTP / WebSockets
                                   ▼
-                     ┌─────────────────────────┐
-                     │     FastAPI Backend     │
-                     │   (Deployed: Railway)   │
-                     └─────┬─────────────┬─────┘
-                           │             │
-              ┌────────────┘             └────────────┐
-              ▼                                       ▼
-  ┌───────────────────────┐               ┌───────────────────────┐
-  │   Supabase Postgres   │               │      Redis Cache      │
-  │  (pgvector + Storage) │               │  (Semantic Key Store) │
-  └───────────────────────┘               └───────────────────────┘
+                    ┌─────────────────────────┐
+                    │     FastAPI Backend     │
+                    │   (Deployed: Railway)   │
+                    └────────────┬────────────┘
+                                 ▼
+                     ┌───────────────────────┐
+                     │   Supabase Postgres   │
+                     │  (pgvector + Storage) │
+                     └───────────────────────┘
 ```
 
 ### Required Configuration Matrix
@@ -180,13 +178,14 @@ DevMind runs across isolated computing zones, synchronized via environment key v
 ```bash
 # Infrastructure Service Gateways
 DATABASE_URL="postgresql://postgres:[PASSWORD]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
-REDIS_URL="redis://:default:[PASSWORD]@redis-production.railway.internal:6379"
 
 # Core LLM Engine & Observability API Keys
 OPENAI_API_KEY="sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx"
-LANGCHAIN_TRACING_V2="true"
-LANGCHAIN_API_KEY="lsv2_pt_xxxxxxxxxxxxxxxxxxxxxxxx"
-LANGCHAIN_PROJECT="devmind-core-orchestrator"
 LANGFUSE_PUBLIC_KEY="pk-lf-xxxxxxxxxxxxxxxxxxxxxxxx"
 LANGFUSE_SECRET_KEY="sk-lf-xxxxxxxxxxxxxxxxxxxxxxxx"
-``` 
+```
+
+> **Observability:** Tracing is Langfuse-only by design. LangChain-core's
+> built-in LangSmith auto-tracing is intentionally left disabled (no
+> `LANGCHAIN_TRACING_V2` / `LANGCHAIN_API_KEY` / `LANGCHAIN_PROJECT`) to
+> avoid duplicate traces to two backends. 

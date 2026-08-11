@@ -144,13 +144,25 @@ def build_dataset() -> EvaluationDataset:
         SingleTurnSample(
             user_input="How does the semantic cache work in DevMind?",
             response=(
-                "DevMind embeds incoming queries and computes cosine similarity "
-                "against cached responses stored in pgvector. "
-                "If similarity exceeds 0.92, the cached answer is returned immediately "
-                "without invoking the LLM, reducing token cost."
+                "DevMind embeds incoming queries using gemini-embedding-001 and computes "
+                "cosine similarity against cached responses stored in an in-memory, "
+                "process-local Python dict (SEMANTIC_CACHE_STORE). "
+                "If similarity meets the threshold of 0.90, the cached answer is returned "
+                "immediately without invoking the LLM, reducing token cost. "
+                "Each cache entry is scoped per-command via a key of the form "
+                "command:prompt.lower(), so hits only match within the same routing intent. "
+                "The cache is volatile: it lives only for the life of the process and is "
+                "not shared across multiple workers."
             ),
             retrieved_contexts=[
-                "The semantic cache uses pgvector cosine similarity with a threshold of 0.92.",
+                "The semantic cache stores cached responses as embedding vectors in an in-memory, "
+                "process-local Python dict (SEMANTIC_CACHE_STORE) using gemini-embedding-001 "
+                "for cosine similarity lookups.",
+                "Cache lookup matches only when cosine similarity is at least the threshold of 0.90.",
+                "Cache entries are keyed per-command as command:prompt.lower(), so a hit is only "
+                "returned when the query shares the same routing command as the cached entry.",
+                "The cache is volatile and process-local: entries are lost on process restart "
+                "and are not shared across multiple workers.",
                 "Cache hits bypass the LangGraph workflow entirely, logging zero token cost to Langfuse.",
                 "Incoming queries are embedded before similarity comparison against cached responses."
             ]

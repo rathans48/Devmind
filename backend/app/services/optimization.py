@@ -19,21 +19,25 @@ def get_router_client():
 # ==========================================
 # 📐 VECTOR SPACE COSINE SIMILARITY MATH
 # ==========================================
-def _get_embedding(text: str) -> Optional[list[float]]:
-    """Generates a dense vector footprint using production-grade gemini-embedding-001."""
+def _get_embedding(text: str) -> list[float]:
+    """Generates a dense vector footprint using gemini-embedding-001.
+
+    Raises on any failure instead of silently returning None. A silent None
+    was the root cause of the cache never populating — callers (main.py) catch
+    and log, then skip the cache for that request only.
+    """
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return None
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.embed_content(
-            model="gemini-embedding-001",
-            contents=text.strip()
+        raise RuntimeError(
+            "Semantic cache embedding failed: no GEMINI_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY configured."
         )
-        return response.embeddings[0].values
-    except Exception as e:
-        print(f"⚠️ [Embedding Generation Failure] Could not calculate prompt vector: {e}")
-        return None
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text.strip()
+    )
+    return response.embeddings[0].values
 
 def _calculate_cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
     """Computes the spatial dot-product cosine angle between two vector footprints."""
@@ -59,8 +63,6 @@ def query_semantic_cache(prompt: str, command: Optional[str], threshold: float =
     """
     # 1. Generate target query vector matrix
     input_vector = _get_embedding(prompt)
-    if not input_vector:
-        return None
 
     highest_similarity = -1.0
     matched_response = None
@@ -93,8 +95,6 @@ def update_semantic_cache(prompt: str, command: Optional[str], response: str) ->
         return
         
     vector = _get_embedding(prompt)
-    if not vector:
-        return
 
     # Use a deterministic signature mapping to build clear record indexes
     cache_key = f"{command or 'none'}:{prompt.strip().lower()}"

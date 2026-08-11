@@ -135,7 +135,7 @@ devmind/
 │       ├── review_agent.py
 │       └── docs_agent.py
 ├── backend/
-│   ├── DockerFile
+│   ├── Dockerfile
 │   └── app/
 │       ├── main.py                 # FastAPI entrypoint — all routes defined here
 │       └── services/

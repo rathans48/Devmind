@@ -81,7 +81,6 @@ out/
 # --- Containerization & Local DBs ---
 # Local database storage volumes (prevents committing your local Postgres data)
 pgdata/
-redisdata/
 *.db
 *.sqlite3
 
