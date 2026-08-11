@@ -125,23 +125,23 @@ python run_evals.py
 ```
 devmind/
 ├── .github/workflows/deploy.yml    # CI: RAGAs eval gate + frontend build check
-├── agents/
-│   ├── graph.py                    # LangGraph workflow definition
-│   ├── state.py                    # Shared AgentState schema
-│   ├── persistence.py              # Custom Supabase-backed checkpoint saver
-│   └── specialist/
-│       ├── code_agent.py
-│       ├── debug_agent.py
-│       ├── review_agent.py
-│       └── docs_agent.py
 ├── backend/
 │   ├── Dockerfile
+│   ├── agents/
+│   │   ├── graph.py                    # LangGraph workflow definition
+│   │   ├── state.py                    # Shared AgentState schema
+│   │   ├── persistence.py              # Custom Supabase-backed checkpoint saver
+│   │   └── specialist/
+│   │       ├── code_agent.py
+│   │       ├── debug_agent.py
+│   │       ├── review_agent.py
+│   │       └── docs_agent.py
 │   └── app/
-│       ├── main.py                 # FastAPI entrypoint — all routes defined here
+│       ├── main.py                     # FastAPI entrypoint — all routes defined here
 │       └── services/
-│           ├── rag_pipeline.py     # Chunking/embedding/retrieval (not yet wired in)
-│           ├── optimization.py     # Semantic cache logic
-│           └── analytics.py        # Usage analytics (mock fallback if Langfuse unset)
+│           ├── rag_pipeline.py         # Chunking/embedding/retrieval (not yet wired in)
+│           ├── optimization.py         # Semantic cache logic
+│           └── analytics.py            # Usage analytics (mock fallback if Langfuse unset)
 ├── frontend/
 │   └── src/
 │       ├── components/

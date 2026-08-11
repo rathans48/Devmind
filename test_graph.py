@@ -9,7 +9,7 @@ load_dotenv(dotenv_path=backend_env_path)
 if not os.getenv("OPENAI_API_KEY"):
     raise ValueError("❌ Environment variables failed to load. Check your backend/.env path alignment.")
 
-from agents.graph import app_engine
+from backend.agents.graph import app_engine
 
 def run_simulation():
     # Setup execution session context thread ID tracker

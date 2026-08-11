@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from agents.state import AgentState
+from ..state import AgentState
 
 # Define the structured quality gate blueprint
 class ReviewValidationResult(BaseModel):

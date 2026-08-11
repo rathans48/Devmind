@@ -1,7 +1,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
-from agents.state import AgentState
+from ..state import AgentState
 
 def run_code_agent(state: AgentState) -> dict:
     is_explain_mode = state.get("current_agent") == "explain"

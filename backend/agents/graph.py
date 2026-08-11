@@ -2,12 +2,12 @@ import os
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 
-from agents.state import AgentState
-from agents.specialist.code_agent import run_code_agent
-from agents.specialist.review_agent import run_review_agent
-from agents.specialist.debug_agent import run_debug_agent
-from agents.specialist.docs_agent import run_docs_agent
-from agents.persistence import SupabaseCheckpointSaver
+from .state import AgentState
+from .specialist.code_agent import run_code_agent
+from .specialist.review_agent import run_review_agent
+from .specialist.debug_agent import run_debug_agent
+from .specialist.docs_agent import run_docs_agent
+from .persistence import SupabaseCheckpointSaver
 
 def entry_router(state: AgentState) -> Literal["code_agent", "debug_agent", "docs_agent", "review_agent"]:
     """ Inspects the initial command token to route to the correct starting node. """

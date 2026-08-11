@@ -1,28 +1,30 @@
 import asyncio
 import json
 import logging
-import sys
 import threading
 import os
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
-from backend.app.services.optimization import query_semantic_cache, update_semantic_cache, route_model_by_complexity
+try:
+    from app.services.optimization import query_semantic_cache, update_semantic_cache, route_model_by_complexity
+    from app.services.analytics import get_platform_metrics
+except ImportError:
+    from backend.app.services.optimization import query_semantic_cache, update_semantic_cache, route_model_by_complexity
+    from backend.app.services.analytics import get_platform_metrics
 from fastapi import FastAPI, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, SystemMessage
-from backend.app.services.analytics import get_platform_metrics
 
 logger = logging.getLogger("devmind.cache")
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+APP_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = APP_DIR.parent
 
 try:
     from dotenv import load_dotenv
 
-    load_dotenv(ROOT_DIR / "backend" / ".env")
+    load_dotenv(BACKEND_DIR / ".env")
 except ImportError:
     pass
 
@@ -210,25 +212,39 @@ def _build_initial_state(
 
 
 def _run_graph_stream(initial_state: dict, session_id: str, queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
-    from agents.graph import app_engine
-    from langfuse import Langfuse
-    from langfuse.langchain import CallbackHandler
-    
-    # 🧠 Initialize the contextual runtime trace callback link
-    Langfuse(
-    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-    host=os.getenv("LANGFUSE_HOST")
-    )
+    try:
+        from agents.graph import app_engine
+    except ImportError:
+        from backend.agents.graph import app_engine
+    except Exception as e:
+        logger.warning("Agent graph import failed; aborting stream: %s", e)
+        asyncio.run_coroutine_threadsafe(queue.put(None), loop)
+        return
 
-    langfuse_callback = CallbackHandler()   # no args — reads the client initialized above
-    
+    langfuse_callback = None
+    try:
+        from langfuse import Langfuse
+        from langfuse.langchain import CallbackHandler
+
+        # 🧠 Initialize the contextual runtime trace callback link
+        Langfuse(
+            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            host=os.getenv("LANGFUSE_HOST"),
+        )
+
+        langfuse_callback = CallbackHandler()   # no args — reads the client initialized above
+    except Exception as e:
+        logger.warning("Langfuse tracing skipped for this request: %s", e)
+        langfuse_callback = None
+
     # Bind the callback alongside your Supabase thread checkpointer configuration
     config = {
         "configurable": {"thread_id": session_id},
-        "callbacks": [langfuse_callback]
     }
-        
+    if langfuse_callback is not None:
+        config["callbacks"] = [langfuse_callback]
+
     accumulated_nodes = {}  # 🧠 Tracks the final response text per specific agent node
     
     try:
@@ -370,7 +386,10 @@ async def agent_stream_generator(
             # Fire the database synchronization completely out-of-band to a background thread pool.
             # This allows the loop to break naturally and lets FastAPI close the HTTP context natively.
             try:
-                from agents.graph import database_checkpointer
+                try:
+                    from agents.graph import database_checkpointer
+                except ImportError:
+                    from backend.agents.graph import database_checkpointer
                 if hasattr(database_checkpointer, "flush_to_supabase"):
                     asyncio.create_task(asyncio.to_thread(database_checkpointer.flush_to_supabase, session_id))
             except Exception as e:
