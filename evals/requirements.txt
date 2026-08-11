@@ -1,0 +1,6 @@
+# Eval-only dependencies for evals/run_evals.py — NOT used by the running app.
+# The CI eval step (deploy.yml) installs backend/requirements.txt first,
+# then these, to keep runtime deps lean.
+ragas>=0.4.3,<0.5
+litellm>=1.40.0
+pandas>=2.0.0

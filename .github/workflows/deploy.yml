@@ -39,6 +39,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+          if [ -f evals/requirements.txt ]; then pip install -r evals/requirements.txt; fi
 
       - name: Execute Automated Performance Verification Suite
         env:

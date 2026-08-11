@@ -2,7 +2,7 @@
 DevMind RAGAs Evaluation Suite
 -------------------------------
 Runs Faithfulness + Response Relevancy evaluation on a golden test dataset.
-Uses gemini-1.5-flash as the judge LLM (free tier available as of 2026).
+Uses gemini-3.1-flash-lite as the judge LLM (low cost, generous quota).
 
 Usage:
     cd devmind/
@@ -81,9 +81,8 @@ except ImportError as e:
 # 5. JUDGE LLM + EMBEDDINGS FACTORY
 # ---------------------------------------------------------------------------
 
-# NOTE: gemini-2.0-flash free tier was removed by Google.
-# gemini-1.5-flash retains a free tier (1500 req/day, 1M tokens/min).
-# Switch to gemini-2.0-flash only if you have a paid API key.
+# gemini-3.1-flash-lite is the current judge model (low cost, generous quota).
+# Switch to a larger model (e.g. gemini-3.1-flash) only if you have a paid API key.
 JUDGE_MODEL = "gemini-3.1-flash-lite"
 
 def build_evaluators():
@@ -222,7 +221,7 @@ def main():
     except Exception as e:
         print(f"\n💥 [Runtime Error] Evaluation failed: {e}")
         print("\nCommon causes:")
-        print("  • gemini-2.0-flash free tier removed — this script now uses gemini-1.5-flash")
+        print("  • Judge model changed — this script now uses gemini-3.1-flash-lite")
         print("  • Daily quota exhausted — wait 24 hours or use a paid API key")
         print("  • Invalid API key — check GEMINI_API_KEY in backend/.env")
         sys.exit(1)
