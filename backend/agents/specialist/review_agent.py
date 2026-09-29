@@ -2,7 +2,7 @@ import os
 from pydantic import BaseModel, Field
 from typing import Optional
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage
 from ..state import AgentState
 
 # Define the structured quality gate blueprint
@@ -25,19 +25,24 @@ def run_review_agent(state: AgentState) -> dict:
     # Force the model to return structured data matching our Pydantic class
     structured_llm = llm.with_structured_output(ReviewValidationResult)
     
-    artifacts = state.get("suggested_code_artifacts", [])
-    latest_artifact = artifacts[-1] if artifacts else state.get("prompt", "")
+    is_concise = bool(state.get("concise", False))
+    if is_concise:
+        system_instruction = (
+            "You are an elite automated Senior Code Reviewer at DevMind.\n"
+            "Analyze the provided code artifact string for syntactic correctness, logic flaws, "
+            "missing brackets, or hidden vulnerabilities.\n"
+            "You must return a structured payload outlining whether it passes or requires debugging.\n"
+            "Be terse: do not restate the code or prior context. Report only genuine issues in "
+            "errors_found and skip verbose breakdowns of trivial or obvious code. Stay correct and complete, just brief."
+        )
+    else:
+        system_instruction = (
+            "You are an elite automated Senior Code Reviewer at DevMind.\n"
+            "Analyze the provided code artifact string for: syntactic correctness, logic flaws, missing brackets, or hidden vulnerabilities.\n"
+            "You must return a structured payload outlining whether it passes or requires debugging."
+        )
     
-    system_instruction = (
-        "You are an elite automated Senior Code Reviewer at DevMind.\n"
-        "Analyze the provided code artifact string for: syntactic correctness, logic flaws, missing brackets, or hidden vulnerabilities.\n"
-        "You must return a structured payload outlining whether it passes or requires debugging."
-    )
-    
-    messages = [
-        SystemMessage(content=system_instruction),
-        HumanMessage(content=f"Code Block Under Review:\n{latest_artifact}")
-    ]
+    messages = [SystemMessage(content=system_instruction)] + state["messages"]
     
     # Execute validation analysis
     result: ReviewValidationResult = structured_llm.invoke(messages)

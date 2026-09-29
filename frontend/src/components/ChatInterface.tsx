@@ -17,6 +17,7 @@ import {
   X,
   BarChart3,
   MessageSquare,
+  MessageSquarePlus,
   Zap,
   Clock,
   DollarSign,
@@ -298,7 +299,7 @@ function AnalyticsDashboard({
 // ===========================================================================
 export default function ChatInterface() {
   const sessionIdRef = useRef<string>(crypto.randomUUID());
-  const { isStreaming, isLoading, activeNode, latestArtifact, startStream, abort } =
+  const { isStreaming, isLoading, activeNode, latestArtifact, startStream, abort, reset } =
     useAgentStream();
 
   const [activeTab, setActiveTab] = useState<"studio" | "metrics">("studio");
@@ -318,6 +319,7 @@ export default function ChatInterface() {
   const [showCommandMenu, setShowCommandMenu] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isMobilePanelOpen, setIsMobilePanelOpen] = useState(false);
+  const [conciseMode, setConciseMode] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -335,6 +337,19 @@ export default function ChatInterface() {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, latestArtifact, isLoading, activeTab]);
+
+  // Auto-grow the composer textarea to fit content, capped at ~50vh.
+  // Reset to "auto" first so it shrinks back down when text is deleted,
+  // then switch to internal scrolling once content exceeds the cap.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxHeight = Math.floor(window.innerHeight * 0.5);
+    const nextHeight = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [input]);
 
   // Fetch analytics only when the metrics tab is opened
   useEffect(() => {
@@ -396,6 +411,7 @@ export default function ChatInterface() {
     const formData = new FormData();
     formData.append("prompt", prompt || trimmed);
     formData.append("session_id", sessionIdRef.current);
+    formData.append("concise", String(conciseMode));
     if (command) formData.append("command", command);
     if (uploadedImage) {
       formData.append("image_base64", uploadedImage.base64);
@@ -432,7 +448,7 @@ export default function ChatInterface() {
         queryCount: prev.queryCount + 1,
       }));
     }
-  }, [input, isStreaming, startStream, uploadedImage]);
+  }, [input, isStreaming, startStream, uploadedImage, conciseMode]);
 
   const onInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showCommandMenu && filteredCommands.length > 0) {
@@ -461,6 +477,21 @@ export default function ChatInterface() {
 
   const handleRemoveMessage = (id: string) =>
     setMessages((prev) => prev.filter((m) => m.id !== id));
+
+  const handleNewChat = useCallback(() => {
+    if (isStreaming) return;
+
+    sessionIdRef.current = crypto.randomUUID();
+    setMessages([]);
+    setInput("");
+    setUploadedImage(null);
+    setShowCommandMenu(false);
+    setSelectedCommandIndex(0);
+    setConciseMode(false);
+    setSessionStats({ totalTokens: 0, estimatedCostUsd: 0, queryCount: 0 });
+    reset();
+    setTimeout(() => inputRef.current?.focus(), 10);
+  }, [isStreaming, reset]);
 
   // Sidebar is identical between Studio and the mobile sheet
   const SidebarContent = () => (
@@ -538,6 +569,18 @@ export default function ChatInterface() {
               {activeNode}
             </span>
           )}
+
+          {/* New Chat — starts a genuinely fresh session without a reload */}
+          <button
+            type="button"
+            onClick={handleNewChat}
+            disabled={isStreaming}
+            title={isStreaming ? "Waiting for the current response to finish" : "Start a new chat"}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1.5 text-xs font-semibold text-zinc-300 transition-colors outline-none hover:border-emerald-500/40 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            New Chat
+          </button>
 
           {/* Studio / Metrics tab toggle — kept in header per existing design,
               but Metrics now links to /dashboard for the full view */}
@@ -715,6 +758,27 @@ export default function ChatInterface() {
                 </div>
               )}
 
+              {/* Concise Mode toggle — lives just above the composer, keeps the input row uncluttered */}
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConciseMode((prev) => !prev)}
+                  aria-pressed={conciseMode}
+                  className={[
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    conciseMode
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                      : "border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200",
+                  ].join(" ")}
+                >
+                  <Zap className={`h-3 w-3 ${conciseMode ? "text-emerald-400" : "text-zinc-500"}`} />
+                  Concise
+                </button>
+                <span className="text-[10px] text-zinc-600">
+                  {conciseMode ? "Terse, focused replies" : "Detailed, full-length replies"}
+                </span>
+              </div>
+
               <div className="flex items-end gap-2">
                 <textarea
                   ref={inputRef}
@@ -728,7 +792,7 @@ export default function ChatInterface() {
                     setSelectedCommandIndex(0);
                   }}
                   onKeyDown={onInputKeyDown}
-                  className="min-h-[2.5rem] max-h-32 flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/60 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="chat-input-scrollbar min-h-[2.5rem] max-h-[50vh] flex-1 resize-none overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/60 disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 {isStreaming ? (
                   <button

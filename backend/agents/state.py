@@ -24,3 +24,6 @@ class AgentState(TypedDict):
     
     # Sources cited for Guardrail execution compliance
     sources_cited: List[Dict[str, Any]]
+    
+    # Response verbosity toggle: True routes agents to terse, direct output
+    concise: bool

@@ -183,6 +183,7 @@ def _build_initial_state(
     command: Optional[str],
     image_base64: Optional[str],
     image_mime: Optional[str],
+    concise: bool = False,
 ) -> Dict[str, Any]:
     has_image = bool(image_base64)
     resolved_command = _normalize_command(command, prompt)
@@ -203,6 +204,7 @@ def _build_initial_state(
         "review_approved": False,
         "errors_found": None,
         "sources_cited": [],
+        "concise": concise,
     }
 
     initial_state.update(
@@ -327,6 +329,7 @@ async def agent_stream_generator(
     command: Optional[str],
     image_base64: Optional[str],
     image_mime: Optional[str],
+    concise: bool = False,
 ) -> AsyncGenerator[str, None]:
     
     has_image = bool(image_base64)
@@ -358,6 +361,7 @@ async def agent_stream_generator(
         command=command,
         image_base64=image_base64,
         image_mime=image_mime,
+        concise=concise,
     )
 
     queue: asyncio.Queue = asyncio.Queue()
@@ -424,6 +428,7 @@ async def agent_stream(
     command: Optional[str] = Form(None),
     image_base64: Optional[str] = Form(None),
     image_mime: Optional[str] = Form(None),
+    concise: bool = Form(False),
 ):
     return StreamingResponse(
         agent_stream_generator(
@@ -433,6 +438,7 @@ async def agent_stream(
             command=command,
             image_base64=image_base64,
             image_mime=image_mime,
+            concise=concise,
         ),
         media_type="text/event-stream",
         headers={

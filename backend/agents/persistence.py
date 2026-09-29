@@ -1,9 +1,12 @@
 import os
-import json
-import time
+import base64
+import logging
 from typing import Any, Dict, List, Optional, Tuple, Sequence
 from langgraph.checkpoint.base import BaseCheckpointSaver, Checkpoint, CheckpointMetadata, CheckpointTuple
+from langchain_core.messages import BaseMessage
 from supabase.client import create_client, Client
+
+logger = logging.getLogger("devmind.persistence")
 
 def _scrub_large_payloads(obj: Any) -> Any:
     """
@@ -18,6 +21,15 @@ def _scrub_large_payloads(obj: Any) -> Any:
         # Intercept base64 image prefixes or any anomalously large text chunk (>20KB)
         if obj.startswith("data:image/") or "base64" in obj[:100] or len(obj) > 20000:
             return "[SCRUBBED_LARGE_ASSET_FOR_STORAGE]"
+    elif isinstance(obj, BaseMessage) and isinstance(obj.content, (dict, list, str)):
+        # Rebuild the message with scrubbed content so heavy blobs never reach
+        # the serde payload, while keeping it a real BaseMessage instance
+        scrubbed_content = _scrub_large_payloads(obj.content)
+        if scrubbed_content is not obj.content:
+            try:
+                return obj.model_copy(update={"content": scrubbed_content})
+            except Exception:
+                return obj.__class__(content=scrubbed_content)
     return obj
 
 class SupabaseCheckpointSaver(BaseCheckpointSaver):
@@ -46,15 +58,17 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         """
         thread_id = config["configurable"]["thread_id"]
         
-        # 1. Create a deep string copy of the checkpoint to avoid mutational side-effects on the live graph
-        serialized_checkpoint = json.loads(json.dumps(checkpoint, default=str))
+        # 1. Run the deep recursive payload clean to strip hidden base64 chunks from message histories
+        cleaned_checkpoint = _scrub_large_payloads(checkpoint)
         
-        # 2. Run the deep recursive payload clean to strip hidden base64 chunks from message histories
-        cleaned_checkpoint = _scrub_large_payloads(serialized_checkpoint)
+        # 2. Serialize through LangGraph's own serde so messages persist as real
+        #    BaseMessage objects instead of default=str repr strings
+        serde_type, serde_data = self.serde.dumps_typed(cleaned_checkpoint)
         
         # 3. Cache the clean, lightweight data profile locally in memory
         self._checkpoint_cache[thread_id] = {
             "checkpoint": cleaned_checkpoint,
+            "checkpoint_blob": (serde_type, serde_data),
             "metadata": metadata,
             "versions": new_versions
         }
@@ -63,18 +77,29 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         if not self.client:
             return config
             
-        payload = {
-            "session_id": thread_id,
-            "user_preferences": self._checkpoint_cache[thread_id]
-        }
+        payload = self._build_supabase_payload(thread_id)
         
         try:
             self.client.table("chat_sessions").upsert(payload).execute()
-        except Exception:
-            # Pass smoothly knowing the local memory buffer is safe for the final out-of-band flush
-            pass
+        except Exception as e:
+            logger.warning("Supabase checkpoint write failed for session %s; local memory buffer remains safe: %s", thread_id, e)
             
         return config
+
+    def _build_supabase_payload(self, thread_id: str) -> Dict[str, Any]:
+        snapshot = self._checkpoint_cache[thread_id]
+        serde_type, serde_data = snapshot["checkpoint_blob"]
+        return {
+            "session_id": thread_id,
+            "user_preferences": {
+                "checkpoint_blob": {
+                    "serde_type": serde_type,
+                    "serde_data": base64.b64encode(serde_data).decode("ascii"),
+                },
+                "metadata": snapshot["metadata"],
+                "versions": snapshot["versions"],
+            }
+        }
 
     def put_writes(self, config: dict, writes: Sequence[Tuple[str, Any]], task_id: str) -> None:
         """Records pending writes per task so LangGraph can tell a task already ran
@@ -111,17 +136,43 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         try:
             res = self.client.table("chat_sessions").select("user_preferences").eq("session_id", thread_id).execute()
             if res.data and len(res.data) > 0:
-                snapshot = res.data[0]["user_preferences"]
+                stored = res.data[0]["user_preferences"]
+                checkpoint = self._load_checkpoint_from_blob(stored, thread_id)
+                if checkpoint is None:
+                    return None
+                snapshot = {
+                    "checkpoint": checkpoint,
+                    "metadata": stored.get("metadata", {}),
+                    "versions": stored.get("versions", {}),
+                }
                 self._checkpoint_cache[thread_id] = snapshot
                 return CheckpointTuple(
                     config=config,
-                    checkpoint=snapshot["checkpoint"],
+                    checkpoint=checkpoint,
                     metadata=snapshot["metadata"],
                     parent_config=None,
                     pending_writes=pending
                 )
-        except Exception:
+        except Exception as e:
+            logger.warning("Supabase checkpoint read failed for session %s; starting a fresh thread: %s", thread_id, e)
             return None
+        return None
+
+    def _load_checkpoint_from_blob(self, stored: Dict[str, Any], thread_id: str) -> Optional[dict]:
+        blob = stored.get("checkpoint_blob")
+        if isinstance(blob, dict) and blob.get("serde_type") and blob.get("serde_data"):
+            try:
+                serde_type = blob["serde_type"]
+                serde_data = base64.b64decode(blob["serde_data"])
+                return self.serde.loads_typed((serde_type, serde_data))
+            except Exception as e:
+                logger.warning("Failed to deserialize Supabase checkpoint for session %s; starting a fresh thread: %s", thread_id, e)
+                return None
+        logger.warning(
+            "Stored checkpoint for session %s predates the serde migration or is malformed; "
+            "discarding it and starting a fresh thread.",
+            thread_id,
+        )
         return None
 
     def flush_to_supabase(self, thread_id: str) -> None:
@@ -131,10 +182,7 @@ class SupabaseCheckpointSaver(BaseCheckpointSaver):
         if not self.client or thread_id not in self._checkpoint_cache:
             return
             
-        payload = {
-            "session_id": thread_id,
-            "user_preferences": self._checkpoint_cache[thread_id]
-        }
+        payload = self._build_supabase_payload(thread_id)
         
         try:
             self.client.table("chat_sessions").upsert(payload).execute()

@@ -14,11 +14,22 @@ def run_debug_agent(state: AgentState) -> dict:
     print("\n[AI Engine] ---> Invoking Debug Agent LLM...")
     llm = get_gemini_client()
     
-    system_instruction = (
-        "You are the Core Debugging Agent for DevMind.\n"
-        "Your task is to review the attached multi-modal screenshot code error image, "
-        "locate the bug, and write the complete corrected script solution inside standard markdown code blocks."
-    )
+    is_concise = bool(state.get("concise", False))
+    if is_concise:
+        system_instruction = (
+            "You are the Core Debugging Agent for DevMind.\n"
+            "Review the attached screenshot code error image, locate the bug, and write the complete "
+            "corrected script solution inside standard markdown code blocks.\n"
+            "Be terse: do not restate the problem or prior context, and skip lengthy step-by-step "
+            "narration. Give the corrected script plus at most a short explanation of what was wrong "
+            "and why the fix works. Stay correct and complete, just brief."
+        )
+    else:
+        system_instruction = (
+            "You are the Core Debugging Agent for DevMind.\n"
+            "Your task is to review the attached multi-modal screenshot code error image, "
+            "locate the bug, and write the complete corrected script solution inside standard markdown code blocks."
+        )
     
     # Prepend the system guidance rules while preserving the underlying multi-modal image blocks
     messages = [SystemMessage(content=system_instruction)] + state["messages"]
