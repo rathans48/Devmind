@@ -1,0 +1,47 @@
+﻿{
+    "samples":  [
+                    {
+                        "answer_relevancy":  0.628666,
+                        "user_input":  "DEBUG: def add(a, b): return(a - b)",
+                        "faithfulness":  0.666667
+                    },
+                    {
+                        "answer_relevancy":  0.786641,
+                        "user_input":  "Generate documentation for a simple sum function.",
+                        "faithfulness":  1
+                    },
+                    {
+                        "answer_relevancy":  0.969353,
+                        "user_input":  "How does the semantic cache work in DevMind?",
+                        "faithfulness":  0.777778
+                    },
+                    {
+                        "answer_relevancy":  0.805599,
+                        "user_input":  "What agents are in the DevMind LangGraph workflow?",
+                        "faithfulness":  0.8
+                    }
+                ],
+    "gate":  {
+                 "overall_pass":  false,
+                 "faithfulness_pass":  true,
+                 "threshold":  0.8,
+                 "answer_relevancy_pass":  false,
+                 "failed_reasons":  [
+                                        "Response Relevancy 0.7976 is below threshold 0.8"
+                                    ]
+             },
+    "ragas_version":  "0.4.3",
+    "litellm_version":  "1.103.1",
+    "mean":  {
+                 "answer_relevancy":  0.7976,
+                 "faithfulness":  0.8111
+             },
+    "judge_model":  "gemini-3.1-flash-lite",
+    "timestamp":  "20260930_0909SS",
+    "retries_or_errors":  [
+                              "LLM returned 1 generations instead of requested 3 (occurred 3 times)"
+                          ],
+    "python_version":  "3.11.9",
+    "embedding_model":  "gemini-embedding-001",
+    "sample_count":  4
+}

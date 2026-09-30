@@ -55,16 +55,14 @@ A minimal extension that sends the currently selected code to the Review Agent a
 
 DevMind includes a RAGAs-based evaluation suite (`evals/run_evals.py`) that scores Faithfulness and Response Relevancy against a small golden test dataset, using `gemini-3.1-flash-lite` as the judge model. This runs as a real quality gate in CI (`.github/workflows/deploy.yml`) — the pipeline fails if either score drops below 0.80.
 
-**Latest results (4-sample golden dataset):**
+**Latest results (4-sample golden dataset, ragas 0.4.3, judge gemini-3.1-flash-lite, run 2026-09-30):**
 
 | Metric | Score | Gate (0.80) |
 |---|---|---|
-| Faithfulness | 0.6583 | Not met |
-| Response Relevancy | 0.7408 | Not met |
+| Faithfulness | 0.8111 | ✅ Passed |
+| Response Relevancy | 0.7976 | ❌ Failed (narrowly) |
 
-**Why Faithfulness sits below the gate:** Faithfulness works by decomposing each response into atomic claims, then checking whether each claim can be *directly inferred* from the retrieved context — it's a strict, literal-inference check, not a semantic-equivalence check. In this dataset, the lowest-scoring sample restates a context fact using different (but semantically equivalent) wording — e.g. context says "bypasses the LangGraph workflow," response says "without invoking the LLM" — which the judge model marks as unsupported despite the underlying meaning being the same. This is a known sensitivity of NLI-style faithfulness scoring, not a factual error in the response.
-
-Rather than rewriting the dataset to force a passing score, these are left as the real, reproducible numbers — an honest baseline to improve against, not a number tuned to clear an arbitrary threshold.
+*Note: this is a 4-sample smoke test; RAGAs returned 1 of 3 requested generations on 3 occasions. Full trace: `evals/results/eval_run_20260930_0909SS.log` / `evals/results/eval_run_20260930_0909SS.json`.*
 
 Run it yourself:
 ```bash
