@@ -9,7 +9,7 @@ This document outlines the production-grade engineering specifications, data des
 ## 1. Executive Design Goals
 
 DevMind is designed to act as an autonomous ecosystem capable of writing, auditing, fixing, and explaining complex, workspace-level codebases. The engineering objectives are guided by three pillars:
-* **Contextual Isolation:** Keeping repository knowledge isolated per session using high-speed vector spaces.
+* **Contextual Isolation:** Keeping repository knowledge isolated per session using high-speed semantic caching.
 * **Deterministic Autonomy:** Utilizing agentic loops via LangGraph that enforce quality control gates before returning data to the client.
 * **Cost Efficiency:** Offloading recurrent workflows through semantic caching to optimize downstream LLM operational expenses.
 
@@ -41,7 +41,7 @@ class AgentState(TypedDict):
 | Attribute | Storage Type | Vector / Graph Objective |
 | :--- | :--- | :--- |
 | `messages` | `Annotated[list, add_messages]` | Appends state histories seamlessly. Tracks conversation history and system messages dynamically. |
-| `workspace_id` | `str` | Limits RAG search operations to the user's uploaded repository context. |
+| `workspace_id` | `str` | Accepted by the API and stored in state; not currently used (reserved for future retrieval scoping). |
 | `review_approved` | `bool` | Serves as the primary conditional variable for terminating or looping graph states. |
 | `errors_found` | `Optional[str]` | Contains compiler execution outputs or visual vision descriptions passed to the Debug Agent. |
 
@@ -68,7 +68,7 @@ The core execution layer uses a directed acyclic/cyclic layout built on **LangGr
 ```
 
 ### Node Mechanics & Task Allocation
-* **Code Agent:** Consumes the initial prompt alongside retrieved vector chunks. Outputs structural modifications and updates `suggested_code_artifacts`.
+* **Code Agent:** Consumes the user prompt and conversation history. Outputs structural modifications and updates `suggested_code_artifacts`.
 * **Review Agent:** Acts as an LLM-based static analyzer. It evaluates syntax, security bugs, and design patterns. Sets `review_approved` to `True` or `False`.
 * **Debug Agent:** Invoked exclusively when execution errors exist or when the Review Agent rejects the code artifacts. Corrects errors and pushes code back to the Review Agent.
 * **Docs Agent:** Generates deployment adjustments, inline document changes, and functional markdown syntax explanations.
@@ -98,17 +98,12 @@ workflow.add_conditional_edges(
 
 ---
 
-## 4. Multi-Source RAG Pipeline Specification
-
-To prevent context drift and hallucinations, DevMind runs a customized Multi-Source Retrieval-Augmented Generation (RAG) architecture using Abstract Syntax Tree (AST) analysis and vector lookup.
-
-```
-[ Codebase / Docs ] ──► [ AST / Recursive Text Splitter ] ──► [ gemini-embedding-001 (768 dimensions, pinned via outputDimensionality) ] ──► [ pgvector / Supabase ]
-```
+## Planned: Retrieval-Augmented Generation (not implemented)
+A retrieval service (`backend/app/services/rag_pipeline.py`) and a `workspace_documents` table with a similarity-search function exist in the repository, but nothing in the running application calls them: there is no ingestion endpoint or UI, and no agent retrieves context. Planned work: wire retrieval into the code, debug and docs agents, add ingestion, and replace the current text splitter with AST-aware chunking.
 
 ### Ingestion & Vector Subsystem Rules
-* **Structural AST Chunking:** Code elements are parsed via target language parsers rather than naive token length limits. Classes, imports, and methods remain bound within identical vector documents to maintain logical context.
-* **Embedding Model Vector Dimensions:** Chunks are translated into dense vector arrays via `text-embedding-3-small` producing 1536 dimensions.
+* **Structural AST Chunking — Planned (not implemented):** Currently code is split with `RecursiveCharacterTextSplitter` (language-aware when possible); AST-based parsing is planned. Classes, imports, and methods remain bound within identical vector documents to maintain logical context.
+* **Embedding Model Vector Dimensions:** Chunks are translated into dense vector arrays via `gemini-embedding-001` producing 768 dimensions.
 * **Similarity Indexing Engine:** Calculations utilize Cosine Similarity distances inside Supabase PostgreSQL vector containers (`pgvector`), layered with Hierarchical Navigable Small World (`HNSW`) indexing structures for sub-millisecond lookups.
 
 ---

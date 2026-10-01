@@ -84,8 +84,9 @@ python run_evals.py
     ┌─────────┴──────────┐
     ▼                    ▼
 [ Semantic Cache ]   [ LangGraph Orchestrator ]
-  (pgvector cosine        │
-   similarity)             ├─► 💻 Code Agent
+  (in-memory store,       │
+   Gemini embedding       │
+   cosine similarity)      ├─► 💻 Code Agent
                            ├─► 🔍 Review Agent
                            ├─► 🛠️  Debug Agent
                            └─► 📄 Docs Agent
